@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, useId } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useApp } from './app-context';
 import {
@@ -6,10 +6,60 @@ import {
   TASK_STATUS_COLORS, TASK_PRIORITY_COLORS,
   WEEKLY_ACTIVITY_DATA, MONTHLY_REVENUE_DATA,
 } from './data';
-import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
-  AreaChart, Area,
-} from 'recharts';
+
+// Simple SVG bar chart for weekly activity
+function SvgBarChart({ data }: { data: typeof WEEKLY_ACTIVITY_DATA }) {
+  const maxVal = Math.max(...data.map(d => d.messages + d.calls));
+  const W = 280, H = 80, pad = 24, barW = 10, gap = 4;
+  const cols = data.length;
+  const colW = (W - pad * 2) / cols;
+  return (
+    <svg viewBox={`0 0 ${W} ${H + 16}`} width="100%" style={{ overflow: 'visible' }}>
+      {data.map((d, i) => {
+        const x = pad + i * colW + colW / 2;
+        const msgH = (d.messages / maxVal) * H;
+        const callH = (d.calls / maxVal) * H;
+        return (
+          <g key={d.day}>
+            <rect x={x - barW - gap / 2} y={H - msgH} width={barW} height={msgH} rx={3} fill="#9B59B6" />
+            <rect x={x + gap / 2} y={H - callH} width={barW} height={callH} rx={3} fill="#EC4899" />
+            <text x={x} y={H + 13} textAnchor="middle" fontSize={8} fill="var(--aw-text-muted)">{d.day.slice(0, 2)}</text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+// Simple SVG area chart for revenue trend
+function SvgAreaChart({ data }: { data: { month: string; income: number }[] }) {
+  const W = 280, H = 70, pad = 8;
+  const vals = data.map(d => d.income);
+  const min = Math.min(...vals), max = Math.max(...vals);
+  const range = max - min || 1;
+  const pts = data.map((d, i) => {
+    const x = pad + (i / (data.length - 1)) * (W - pad * 2);
+    const y = H - ((d.income - min) / range) * (H - 8) - 4;
+    return [x, y] as [number, number];
+  });
+  const linePath = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p[0]},${p[1]}`).join(' ');
+  const areaPath = linePath + ` L${pts[pts.length - 1][0]},${H} L${pts[0][0]},${H} Z`;
+  return (
+    <svg viewBox={`0 0 ${W} ${H + 14}`} width="100%" style={{ overflow: 'visible' }}>
+      <defs>
+        <linearGradient id="svg-area-grad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#10b981" stopOpacity={0.3} />
+          <stop offset="100%" stopColor="#10b981" stopOpacity={0} />
+        </linearGradient>
+      </defs>
+      <path d={areaPath} fill="url(#svg-area-grad)" />
+      <path d={linePath} fill="none" stroke="#10b981" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+      {pts.map((p, i) => (
+        <text key={data[i].month} x={p[0]} y={H + 13} textAnchor="middle" fontSize={8} fill="var(--aw-text-muted)">{data[i].month.slice(0, 2)}</text>
+      ))}
+    </svg>
+  );
+}
 
 // ========================
 // BRIEFING DATA
@@ -40,20 +90,7 @@ const BRIEFING_LINES = [
 // ========================
 // MINI TOOLTIP
 // ========================
-function MiniTooltip({ active, payload, label }: any) {
-  if (!active || !payload?.length) return null;
-  return (
-    <div className="rounded-lg px-2.5 py-1.5 border border-[var(--aw-border)]" style={{ background: 'var(--aw-bg-modal)', direction: 'rtl', fontSize: 11 }}>
-      <div className="text-[10px] text-[var(--aw-text-muted)] mb-0.5">{label}</div>
-      {payload.map((p: any, i: number) => (
-        <div key={i} className="flex items-center gap-1" style={{ color: p.color, fontWeight: 600 }}>
-          <span className="w-1.5 h-1.5 rounded-full" style={{ background: p.color }} />
-          {p.name}: {toFa(p.value)}
-        </div>
-      ))}
-    </div>
-  );
-}
+
 
 // ========================
 // SECTION WRAPPER (animates in)
@@ -81,8 +118,6 @@ function BriefingSection({ visible, children, delay = 0, id = 'default' }: { vis
 // ========================
 export default function DailyBriefingScreen({ onDismiss }: { onDismiss: () => void }) {
   const { tasks, agents } = useApp();
-  const uid = useId().replace(/:/g, '');
-  const gradId = `briefGrad-${uid}`;
   const [currentLine, setCurrentLine] = useState(0);
   const [displayedText, setDisplayedText] = useState('');
   const [isSpeaking, setIsSpeaking] = useState(true);
@@ -488,16 +523,12 @@ export default function DailyBriefingScreen({ onDismiss }: { onDismiss: () => vo
                     ۱۲٪ رشد
                   </span>
                 </div>
-                <div style={{ direction: 'ltr' }} className="h-[110px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={WEEKLY_ACTIVITY_DATA} barGap={2}>
-                      <XAxis dataKey="day" tick={{ fill: 'var(--aw-text-muted)', fontSize: 10 }} axisLine={false} tickLine={false} />
-                      <YAxis hide />
-                      <Tooltip content={<MiniTooltip />} cursor={{ fill: 'rgba(155,89,182,0.08)' }} />
-                      <Bar dataKey="messages" name="پیام" fill="#9B59B6" radius={[4, 4, 0, 0]} barSize={11} isAnimationActive={false} />
-                      <Bar dataKey="calls" name="تماس" fill="#EC4899" radius={[4, 4, 0, 0]} barSize={11} isAnimationActive={false} />
-                    </BarChart>
-                  </ResponsiveContainer>
+                <div className="h-[110px] flex items-end px-1">
+                  <SvgBarChart data={WEEKLY_ACTIVITY_DATA} />
+                </div>
+                <div className="flex items-center gap-3 mt-1 px-1">
+                  <span className="flex items-center gap-1 text-[10px] text-[var(--aw-text-muted)]"><span className="w-2 h-2 rounded-sm inline-block" style={{ background: '#9B59B6' }} />پیام</span>
+                  <span className="flex items-center gap-1 text-[10px] text-[var(--aw-text-muted)]"><span className="w-2 h-2 rounded-sm inline-block" style={{ background: '#EC4899' }} />تماس</span>
                 </div>
               </div>
 
@@ -509,21 +540,8 @@ export default function DailyBriefingScreen({ onDismiss }: { onDismiss: () => vo
                   </div>
                   <span className="text-[13px] text-[var(--aw-text-primary)]" style={{ fontWeight: 600 }}>روند درآمد</span>
                 </div>
-                <div style={{ direction: 'ltr' }} className="h-[90px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={MONTHLY_REVENUE_DATA.slice(-6)}>
-                      <defs>
-                        <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#10b981" stopOpacity={0.3} />
-                          <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
-                        </linearGradient>
-                      </defs>
-                      <XAxis dataKey="month" tick={{ fill: 'var(--aw-text-muted)', fontSize: 10 }} axisLine={false} tickLine={false} />
-                      <YAxis hide />
-                      <Tooltip content={<MiniTooltip />} cursor={{ stroke: 'rgba(16,185,129,0.3)', strokeWidth: 1 }} />
-                      <Area type="monotone" dataKey="income" name="درآمد" stroke="#10b981" fill={`url(#${gradId})`} strokeWidth={2} isAnimationActive={false} />
-                    </AreaChart>
-                  </ResponsiveContainer>
+                <div className="h-[90px] px-1">
+                  <SvgAreaChart data={MONTHLY_REVENUE_DATA.slice(-6)} />
                 </div>
               </div>
             </div>
